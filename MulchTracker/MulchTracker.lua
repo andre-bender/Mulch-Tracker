@@ -159,18 +159,16 @@ local function FormatReady(ts)
 end
 
 local function GetRowStatus(data)
-    if not data.itemKnown then
-        return "missing"
-    end
-
     local remaining = GetRemainingSeconds(data.readyAt)
 
     if remaining <= 0 then
         return "ready"
     elseif remaining <= SOON_THRESHOLD then
         return "soon"
-    else
+    elseif remaining > 0 then
         return "cooldown"
+    else
+        return "unknown"
     end
 end
 
