@@ -92,6 +92,11 @@ local function GetCharData(key)
     return MulchTrackerDB.characters[key]
 end
 
+local function IsGCDActive()
+    local start, duration = GetSpellCooldown(61304) -- 61304 = the universal GCD spell
+    return duration > 0 and start > 0
+end
+
 -- local function ScanBagsForItem(itemID)
 --     if not itemID or itemID == 0 then
 --         return false
@@ -385,6 +390,11 @@ local function ApplyRowVisualState(row, data, index)
 end
 
 local function RefreshUI()
+    if IsGCDActive() then
+        -- Prevent UI update in fight to avoid interference with global cooldown
+        return
+    end
+
     EnsureDB()
     UpdateContentWidth()
 
