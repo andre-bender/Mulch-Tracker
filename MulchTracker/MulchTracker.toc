@@ -1,0 +1,8 @@
+## Interface: 120000
+## Title: Mulch Tracker
+## Notes: Tracks Mulch Cooldown for herbalism profession
+## Author: GoldbaronTV
+## Version: 1.0.0
+## SavedVariables: MulchTrackerDB
+
+MulchTracker.lua
