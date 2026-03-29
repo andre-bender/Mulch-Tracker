@@ -15,6 +15,11 @@ local ITEM_ID = 238388
 local READY_ICON = "|TInterface\\RaidFrame\\ReadyCheck-Ready:16|t"
 local SOON_THRESHOLD = 300 -- 5 Minuten
 
+local EXTRA_ITEMS = {
+    { id = 238388, name = "Verzauberter Mulch" },
+    { id = 237497, name = "Item 237497" },
+}
+
 MulchTrackerDB = MulchTrackerDB or {}
 
 local ticker
@@ -36,7 +41,6 @@ local function EnsureDB()
         width = 420,
         height = 300,
     }
-
 end
 
 local function GetCharKey()
@@ -92,37 +96,6 @@ local function GetCharData(key)
     return MulchTrackerDB.characters[key]
 end
 
-local function IsGCDActive()
-    --Check spell 61304 (global cooldown) to determine if we're currently in combat or affected by the global cooldown
-    if C_Spell and C_Spell.GetSpellCooldown then
-        GCDspellCooldownInfo = C_Spell.GetSpellCooldown(61304)
-        GCDstart = GCDspellCooldownInfo and GCDspellCooldownInfo.startTime
-        GCDduration = GCDspellCooldownInfo and GCDspellCooldownInfo.duration
-        GCDenabled = GCDspellCooldownInfo and GCDspellCooldownInfo.isEnabled
-    else
-        GCDstart, GCDduration, GCDenabled = GetSpellCooldown(61304)
-    end
-
-    return GCDduration > 0 and GCDstart > 0
-end
-
--- local function ScanBagsForItem(itemID)
---     if not itemID or itemID == 0 then
---         return false
---     end
-
---     for bag = 0, NUM_BAG_FRAMES do
---         local numSlots = C_Container.GetContainerNumSlots(bag)
---         for slot = 1, numSlots do
---             if C_Container.GetContainerItemID(bag, slot) == itemID then
---                 return true
---             end
---         end
---     end
-
---     return false
--- end
-
 local function IsReady(ts)
     return (not ts) or ts == 0 or ts <= time()
 end
@@ -134,6 +107,53 @@ local function GetRemainingSeconds(ts)
     return math.max(0, ts - time())
 end
 
+local function GetItemCountSafe(itemID)
+    if C_Item and C_Item.GetItemCount then
+        local count = C_Item.GetItemCount(itemID, false, false, false)
+        if count ~= nil then
+            return count
+        end
+    end
+
+    if GetItemCount then
+        return GetItemCount(itemID, false, false) or 0
+    end
+
+    return 0
+end
+
+local function IsItemUsableSafe(itemID)
+    if C_Item and C_Item.IsUsableItem then
+        local usable, noMana = C_Item.IsUsableItem(itemID)
+        return usable, noMana
+    end
+
+    if IsUsableItem then
+        local usable, noMana = IsUsableItem(itemID)
+        return usable, noMana
+    end
+
+    return false, false
+end
+
+local function GetItemIconSafe(itemID)
+    local icon
+
+    if C_Item and C_Item.GetItemIconByID then
+        icon = C_Item.GetItemIconByID(itemID)
+    end
+
+    if not icon and GetItemIcon then
+        icon = GetItemIcon(itemID)
+    end
+
+    if not icon and C_Item and C_Item.RequestLoadItemDataByID then
+        C_Item.RequestLoadItemDataByID(itemID)
+    end
+
+    return icon or "Interface\\Icons\\INV_Misc_QuestionMark"
+end
+
 local function UpdateCurrentCharacterData()
     local key = GetCharKey()
     local data = GetCharData(key)
@@ -143,14 +163,6 @@ local function UpdateCurrentCharacterData()
     data.class = select(2, UnitClass("player")) or data.class
     data.displayName = (data.name or "Unknown") .. "-" .. (data.realm or "UnknownRealm")
     data.hasHerbalism = CharacterHasHerbalism()
-
-    -- local hasItem = ScanBagsForItem(ITEM_ID)
-    -- data.itemKnown = hasItem
-
-    -- if not hasItem then
-    --     data.readyAt = 0
-    --     return
-    -- end
 
     local startTime, duration = C_Item.GetItemCooldown(ITEM_ID)
     startTime = startTime or 0
@@ -218,11 +230,10 @@ end
 
 panel = CreateFrame("Frame", "MulchTrackerPanel", UIParent, "BackdropTemplate")
 panel:SetSize(420, 300)
+panel:SetResizeBounds(250, 300)
 panel:SetMovable(true)
 panel:EnableMouse(true)
 panel:SetResizable(true)
--- panel:SetMinResize(200,100)
--- panel:SetMaxResize(700,500)
 panel:RegisterForDrag("LeftButton")
 panel:SetClampedToScreen(true)
 
@@ -271,7 +282,7 @@ panel.close:SetPoint("TOPRIGHT", 0, 0)
 -- Scroll Bar
 panel.scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
 panel.scroll:SetPoint("TOPLEFT", 10, -35)
-panel.scroll:SetPoint("BOTTOMRIGHT", -30, 40)
+panel.scroll:SetPoint("BOTTOMRIGHT", -30, 72)
 panel.content = CreateFrame("Frame", nil, panel.scroll)
 panel.content:SetSize(360, 1)
 panel.scroll:SetScrollChild(panel.content)
@@ -289,18 +300,19 @@ panel.headerTime:SetText("Ready")
 panel.headerTime:SetTextColor(1, 0.82, 0)
 
 panel.rows = {}
+panel.itemButtons = {}
 
 -- Resize button
-panel.ResizeGrip = CreateFrame("Button",nil,panel)
-panel.ResizeGrip:SetSize(20,20)
+panel.ResizeGrip = CreateFrame("Button", nil, panel)
+panel.ResizeGrip:SetSize(20, 20)
 panel.ResizeGrip:SetPoint("BOTTOMRIGHT")
 panel.ResizeGrip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
 panel.ResizeGrip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
 panel.ResizeGrip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
-panel.ResizeGrip:SetScript("OnMouseDown",function(self)
-  self:GetParent():StartSizing()
+panel.ResizeGrip:SetScript("OnMouseDown", function(self)
+    self:GetParent():StartSizing()
 end)
-panel.ResizeGrip:SetScript("OnMouseUp",function(self)
+panel.ResizeGrip:SetScript("OnMouseUp", function(self)
     self:GetParent():StopMovingOrSizing()
 
     EnsureDB()
@@ -399,11 +411,6 @@ local function ApplyRowVisualState(row, data, index)
 end
 
 local function RefreshUI()
-    if IsGCDActive() then
-        -- Prevent UI update in fight to avoid interference with global cooldown
-        return
-    end
-
     EnsureDB()
     UpdateContentWidth()
 
@@ -450,6 +457,126 @@ local function RefreshUI()
     panel.content:SetHeight(math.max(60, 28 + (#keys * 20)))
 end
 
+-- =========================================================
+-- ITEM BUTTONS
+-- =========================================================
+
+local function UpdateItemButton(button)
+    if not button or not button.itemID then
+        return
+    end
+
+    local itemID = button.itemID
+    local count = GetItemCountSafe(itemID)
+    local usable = IsItemUsableSafe(itemID)
+    local icon = GetItemIconSafe(itemID)
+
+    button.icon:SetTexture(icon)
+    button:SetAttribute("type", "item")
+    button:SetAttribute("item", "item:" .. itemID)
+
+    if count and count > 0 then
+        button.count:SetText(count)
+    else
+        button.count:SetText("")
+    end
+
+    if count > 0 then
+        button.icon:SetDesaturated(false)
+        button.icon:SetAlpha(usable and 1 or 0.55)
+        button.count:SetTextColor(1, 1, 1)
+
+        if usable then
+            button.border:SetBackdropBorderColor(0.2, 0.8, 0.2, 1)
+        else
+            button.border:SetBackdropBorderColor(0.8, 0.65, 0.2, 1)
+        end
+    else
+        button.icon:SetDesaturated(true)
+        button.icon:SetAlpha(0.35)
+        button.count:SetText("")
+        button.border:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+    end
+end
+
+local function UpdateItemButtons()
+    if not panel.itemButtons then
+        return
+    end
+
+    for _, button in ipairs(panel.itemButtons) do
+        UpdateItemButton(button)
+    end
+end
+
+local function CreateItemButton(parent, itemID, anchorTo, offsetX)
+    local button = CreateFrame("Button", nil, parent, "SecureActionButtonTemplate")
+    button:SetSize(42, 42)
+    button.itemID = itemID
+    button:RegisterForClicks("AnyUp", "AnyDown")
+
+    if anchorTo then
+        button:SetPoint("LEFT", anchorTo, "RIGHT", offsetX or 8, 0)
+    else
+        button:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 12, 34)
+    end
+
+    -- Hintergrund
+    button.bg = button:CreateTexture(nil, "BACKGROUND")
+    button.bg:SetAllPoints()
+    button.bg:SetColorTexture(0, 0, 0, 0.4)
+
+    -- Icon
+    button.icon = button:CreateTexture(nil, "ARTWORK")
+    button.icon:SetPoint("TOPLEFT", 2, -2)
+    button.icon:SetPoint("BOTTOMRIGHT", -2, 2)
+    button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    button.icon:SetTexture(GetItemIconSafe(itemID))
+
+    -- Echter Rahmen statt Vollflächen-Overlay
+    button.border = CreateFrame("Frame", nil, button, "BackdropTemplate")
+    button.border:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+    button.border:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
+    button.border:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 12,
+        insets = { left = 2, right = 2, top = 2, bottom = 2 },
+    })
+    button.border:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+
+    -- Anzahl
+    button.count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    button.count:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2)
+    button.count:SetJustifyH("RIGHT")
+    button.count:SetText("")
+
+    button:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetHyperlink("item:" .. self.itemID)
+        GameTooltip:Show()
+    end)
+
+    button:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    return button
+end
+
+local function CreateItemButtons()
+    if panel.itemButtonsCreated then
+        return
+    end
+
+    local button1 = CreateItemButton(panel, EXTRA_ITEMS[1].id, nil, nil)
+    local button2 = CreateItemButton(panel, EXTRA_ITEMS[2].id, button1, 8)
+
+    panel.itemButtons[1] = button1
+    panel.itemButtons[2] = button2
+    panel.itemButtonsCreated = true
+
+    UpdateItemButtons()
+end
 -- =========================================================
 -- URLClickerBox
 -- =========================================================
@@ -517,7 +644,6 @@ hooksecurefunc("SetItemRef", function(link, text, button, chatFrame)
     end
 end)
 
-
 -- =========================================================
 -- LOGOUT BUTTON
 -- =========================================================
@@ -538,41 +664,32 @@ local function CreateLogoutButton()
 
     panel.logoutButton = button
 
--- =========================================================
--- Developed by Text (links unten)
--- =========================================================
+    local devButton = CreateFrame("Button", nil, panel)
+    devButton:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, 12)
+    devButton:SetSize(220, 16)
 
--- =========================================================
--- Developed by Text (klickbar)
--- =========================================================
-
-local devButton = CreateFrame("Button", nil, panel)
-devButton:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, 12)
-devButton:SetSize(220, 16)
-
-local devText = devButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-devText:SetAllPoints()
-devText:SetText("Developed by twitch.tv/goldbaronTV")
-devText:SetTextColor(0.6, 0.6, 0.6)
-devText:SetJustifyH("LEFT")
-
--- Hover-Effekt
-devButton:SetScript("OnEnter", function()
-    devText:SetTextColor(1, 0.82, 0)
-end)
-
-devButton:SetScript("OnLeave", function()
+    local devText = devButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    devText:SetAllPoints()
+    devText:SetText("Developed by twitch.tv/goldbaronTV")
     devText:SetTextColor(0.6, 0.6, 0.6)
-end)
+    devText:SetJustifyH("LEFT")
 
--- Klick → Popup
-devButton:SetScript("OnClick", function()
-    SetItemRef("url:https://twitch.tv/goldbarontv", "https://twitch.tv/goldbarontv", "LeftButton")
-end)
+    devButton:SetScript("OnEnter", function()
+        devText:SetTextColor(1, 0.82, 0)
+    end)
 
-panel.devText = devText
-panel.devButton = devButton
+    devButton:SetScript("OnLeave", function()
+        devText:SetTextColor(0.6, 0.6, 0.6)
+    end)
+
+    devButton:SetScript("OnClick", function()
+        SetItemRef("url:https://twitch.tv/goldbarontv", "https://twitch.tv/goldbarontv", "LeftButton")
+    end)
+
+    panel.devText = devText
+    panel.devButton = devButton
 end
+
 -- =========================================================
 -- TICKER / COMMANDS
 -- =========================================================
@@ -585,6 +702,7 @@ local function StartTicker()
     ticker = C_Timer.NewTicker(1, function()
         if panel:IsShown() then
             RefreshUI()
+            UpdateItemButtons()
         end
     end)
 end
@@ -600,6 +718,7 @@ SlashCmdList["MULCHTRACKER"] = function(msg)
     else
         panel:Show()
         RefreshUI()
+        UpdateItemButtons()
     end
 end
 
@@ -617,6 +736,7 @@ MT:SetScript("OnEvent", function(_, event, ...)
         EnsureDB()
         ApplyWindowPosition()
         CreateLogoutButton()
+        CreateItemButtons()
         panel:Show()
         StartTicker()
 
@@ -624,19 +744,26 @@ MT:SetScript("OnEvent", function(_, event, ...)
         C_Timer.After(2, function()
             UpdateCurrentCharacterData()
             RefreshUI()
+            UpdateItemButtons()
         end)
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         UpdateCurrentCharacterData()
         RefreshUI()
+        UpdateItemButtons()
 
     elseif event == "BAG_UPDATE_COOLDOWN" then
         UpdateCurrentCharacterData()
         RefreshUI()
+        UpdateItemButtons()
 
     elseif event == "BAG_UPDATE_DELAYED" then
         UpdateCurrentCharacterData()
         RefreshUI()
+        UpdateItemButtons()
+
+    elseif event == "GET_ITEM_INFO_RECEIVED" then
+        UpdateItemButtons()
     end
 end)
 
@@ -645,3 +772,4 @@ MT:RegisterEvent("PLAYER_LOGIN")
 MT:RegisterEvent("PLAYER_ENTERING_WORLD")
 MT:RegisterEvent("BAG_UPDATE_COOLDOWN")
 MT:RegisterEvent("BAG_UPDATE_DELAYED")
+MT:RegisterEvent("GET_ITEM_INFO_RECEIVED")
