@@ -206,6 +206,9 @@ panel = CreateFrame("Frame", "MulchTrackerPanel", UIParent, "BackdropTemplate")
 panel:SetSize(420, 300)
 panel:SetMovable(true)
 panel:EnableMouse(true)
+panel:SetResizable(true)
+-- panel:SetMinResize(200,100)
+-- panel:SetMaxResize(700,500)
 panel:RegisterForDrag("LeftButton")
 panel:SetClampedToScreen(true)
 
@@ -272,6 +275,29 @@ panel.headerTime:SetText("Ready")
 panel.headerTime:SetTextColor(1, 0.82, 0)
 
 panel.rows = {}
+
+-- Resize button
+panel.ResizeGrip = CreateFrame("Button",nil,panel)
+panel.ResizeGrip:SetSize(20,20)
+panel.ResizeGrip:SetPoint("BOTTOMRIGHT")
+panel.ResizeGrip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+panel.ResizeGrip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+panel.ResizeGrip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+panel.ResizeGrip:SetScript("OnMouseDown",function(self)
+  self:GetParent():StartSizing()
+end)
+panel.ResizeGrip:SetScript("OnMouseUp",function(self)
+    self:GetParent():StopMovingOrSizing()
+
+    EnsureDB()
+    local point, _, relativePoint, x, y = self:GetParent():GetPoint()
+    MulchTrackerDB.window.point = point
+    MulchTrackerDB.window.relativePoint = relativePoint
+    MulchTrackerDB.window.x = x
+    MulchTrackerDB.window.y = y
+    MulchTrackerDB.window.width = self:GetParent():GetWidth()
+    MulchTrackerDB.window.height = self:GetParent():GetHeight()
+end)
 
 local function UpdateContentWidth()
     local width = panel.scroll:GetWidth()
@@ -481,7 +507,7 @@ local function CreateLogoutButton()
     -- Sichtbarer Button (Design)
     local button = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     button:SetSize(80, 22)
-    button:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -10, 10)
+    button:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -12, 10)
     button:SetText("Logout")
 
     -- Secure Overlay (führt Logout aus)
