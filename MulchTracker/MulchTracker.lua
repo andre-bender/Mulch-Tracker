@@ -119,22 +119,22 @@ local function GetCharData(key)
     return MulchTrackerDB.characters[key]
 end
 
-local function ScanBagsForItem(itemID)
-    if not itemID or itemID == 0 then
-        return false
-    end
+-- local function ScanBagsForItem(itemID)
+--     if not itemID or itemID == 0 then
+--         return false
+--     end
 
-    for bag = 0, NUM_BAG_FRAMES do
-        local numSlots = C_Container.GetContainerNumSlots(bag)
-        for slot = 1, numSlots do
-            if C_Container.GetContainerItemID(bag, slot) == itemID then
-                return true
-            end
-        end
-    end
+--     for bag = 0, NUM_BAG_FRAMES do
+--         local numSlots = C_Container.GetContainerNumSlots(bag)
+--         for slot = 1, numSlots do
+--             if C_Container.GetContainerItemID(bag, slot) == itemID then
+--                 return true
+--             end
+--         end
+--     end
 
-    return false
-end
+--     return false
+-- end
 
 local function IsReady(ts)
     return (not ts) or ts == 0 or ts <= time()
@@ -157,13 +157,13 @@ local function UpdateCurrentCharacterData()
     data.displayName = (data.name or "Unknown") .. "-" .. (data.realm or "UnknownRealm")
     data.hasHerbalism = CharacterHasHerbalism()
 
-    local hasItem = ScanBagsForItem(ITEM_ID)
-    data.itemKnown = hasItem
+    -- local hasItem = ScanBagsForItem(ITEM_ID)
+    -- data.itemKnown = hasItem
 
-    if not hasItem then
-        data.readyAt = 0
-        return
-    end
+    -- if not hasItem then
+    --     data.readyAt = 0
+    --     return
+    -- end
 
     local startTime, duration = C_Item.GetItemCooldown(ITEM_ID)
     startTime = startTime or 0
@@ -418,12 +418,7 @@ local function RefreshUI()
         local row = GetRow(i)
 
         row.name:SetText(data.displayName or key)
-
-        if not data.itemKnown then
-            row.time:SetText("-")
-        else
-            row.time:SetText(FormatReady(data.readyAt))
-        end
+        row.time:SetText(FormatReady(data.readyAt))
 
         ApplyRowVisualState(row, data, i)
         row:Show()
