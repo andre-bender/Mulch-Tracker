@@ -20,33 +20,6 @@ MulchTrackerDB = MulchTrackerDB or {}
 local ticker
 local panel
 
-StaticPopupDialogs["MULCHTRACKER_COPY_LINK"] = {
-    text = "Website zum Kopieren:",
-    button1 = "Schließen",
-    hasEditBox = true,
-    editBoxWidth = 280,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = STATICPOPUP_NUMDIALOGS,
-
-    OnShow = function(self)
-        if self.editBox then
-            self.editBox:SetText("https://twitch.tv/goldbarontv")
-            self.editBox:HighlightText()
-            self.editBox:SetFocus()
-        end
-    end,
-
-    EditBoxOnEscapePressed = function(editBox)
-        editBox:GetParent():Hide()
-    end,
-
-    EditBoxOnEnterPressed = function(editBox)
-        editBox:HighlightText()
-    end,
-}
-
 -- =========================================================
 -- DATA / HELPERS
 -- =========================================================
@@ -265,22 +238,25 @@ panel:SetScript("OnDragStop", function(self)
     MulchTrackerDB.window.height = self:GetHeight()
 end)
 
+-- Title
 panel.title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 panel.title:SetPoint("TOPLEFT", 12, -10)
 panel.title:SetText("Mulch Tracker")
 
+-- Version Text
 panel.versionText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 panel.versionText:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -30, -14)
 panel.versionText:SetText(VERSION)
 panel.versionText:SetTextColor(0.7, 0.7, 0.7)
 
+-- Close Button
 panel.close = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
 panel.close:SetPoint("TOPRIGHT", 0, 0)
 
+-- Scroll Bar
 panel.scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
 panel.scroll:SetPoint("TOPLEFT", 10, -35)
 panel.scroll:SetPoint("BOTTOMRIGHT", -30, 40)
-
 panel.content = CreateFrame("Frame", nil, panel.scroll)
 panel.content:SetSize(360, 1)
 panel.scroll:SetScrollChild(panel.content)
