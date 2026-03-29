@@ -399,7 +399,7 @@ local function RefreshUI()
 
     if #keys == 0 then
         local row = GetRow(1)
-        row.name:SetText("Keine Kräuterkunde-Charaktere gefunden")
+        row.name:SetText("No characters with herbalism found")
         row.name:SetTextColor(1, 1, 1)
         row.time:SetText("")
         row.bg:SetColorTexture(1, 1, 1, 0.03)
