@@ -93,8 +93,17 @@ local function GetCharData(key)
 end
 
 local function IsGCDActive()
-    local start, duration = GetSpellCooldown(61304) -- 61304 = the universal GCD spell
-    return duration > 0 and start > 0
+    --Check spell 61304 (global cooldown) to determine if we're currently in combat or affected by the global cooldown
+    if C_Spell and C_Spell.GetSpellCooldown then
+        GCDspellCooldownInfo = C_Spell.GetSpellCooldown(61304)
+        GCDstart = GCDspellCooldownInfo and GCDspellCooldownInfo.startTime
+        GCDduration = GCDspellCooldownInfo and GCDspellCooldownInfo.duration
+        GCDenabled = GCDspellCooldownInfo and GCDspellCooldownInfo.isEnabled
+    else
+        GCDstart, GCDduration, GCDenabled = GetSpellCooldown(61304)
+    end
+
+    return GCDduration > 0 and GCDstart > 0
 end
 
 -- local function ScanBagsForItem(itemID)
