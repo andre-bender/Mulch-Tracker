@@ -10,7 +10,7 @@ local MT = CreateFrame("Frame", "MulchTrackerFrame")
 -- CONFIG
 -- =========================================================
 
-local VERSION = "v1.0"
+local VERSION = "v1.1.0"
 local ITEM_ID = 238388
 local READY_ICON = "|TInterface\\RaidFrame\\ReadyCheck-Ready:16|t"
 local SOON_THRESHOLD = 300 -- 5 Minuten
@@ -471,9 +471,19 @@ local function UpdateItemButton(button)
     local usable = IsItemUsableSafe(itemID)
     local icon = GetItemIconSafe(itemID)
 
+    local startTime, duration = C_Item.GetItemCooldown(itemID)
+    startTime = startTime or 0
+    duration = duration or 0
+
+    local remaining = 0
+    if startTime > 0 and duration > 0 then
+        remaining = math.max(0, math.ceil((startTime + duration) - GetTime()))
+    end
+
     button.icon:SetTexture(icon)
     button:SetAttribute("type", "item")
     button:SetAttribute("item", "item:" .. itemID)
+    button.cooldownText:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
 
     if count and count > 0 then
         button.count:SetText(count)
@@ -481,20 +491,48 @@ local function UpdateItemButton(button)
         button.count:SetText("")
     end
 
+    if remaining > 0 then
+        if remaining < 60 then
+            button.cooldownText:SetText(remaining)
+        else
+            local minutes = math.ceil(remaining / 60)
+            button.cooldownText:SetText(minutes .. " m")
+        end
+
+        button.cooldownText:Show()
+        button.icon:SetDesaturated(true)
+        button.icon:SetAlpha(0.55)
+    else
+        button.cooldownText:SetText("")
+        button.cooldownText:Hide()
+
+        if count > 0 then
+            button.icon:SetDesaturated(false)
+            button.icon:SetAlpha(usable and 1 or 0.55)
+        else
+            button.icon:SetDesaturated(true)
+            button.icon:SetAlpha(0.35)
+        end
+    end
+
     if count > 0 then
-        button.icon:SetDesaturated(false)
-        button.icon:SetAlpha(usable and 1 or 0.55)
         button.count:SetTextColor(1, 1, 1)
 
-        if usable then
-            button.border:SetBackdropBorderColor(0.2, 0.8, 0.2, 1)
-        else
+        if remaining > 0 then
             button.border:SetBackdropBorderColor(0.8, 0.65, 0.2, 1)
+        else
+            if usable then
+                button.border:SetBackdropBorderColor(0.2, 0.8, 0.2, 1)
+            else
+                button.border:SetBackdropBorderColor(0.8, 0.65, 0.2, 1)
+            end
         end
     else
         button.icon:SetDesaturated(true)
         button.icon:SetAlpha(0.35)
         button.count:SetText("")
+        button.cooldownText:SetText("")
+        button.cooldownText:Hide()
         button.border:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
     end
 end
@@ -550,6 +588,14 @@ local function CreateItemButton(parent, itemID, anchorTo, offsetX)
     button.count:SetJustifyH("RIGHT")
     button.count:SetText("")
 
+    -- Cooldown Zahl auf dem Button
+    button.cooldownText = button:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    button.cooldownText:SetPoint("CENTER", button, "CENTER", 0, 0)
+    button.cooldownText:SetJustifyH("CENTER")
+    button.cooldownText:SetTextColor(1, 1, 1)
+    button.cooldownText:SetText("")
+    button.cooldownText:Hide()
+
     button:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetHyperlink("item:" .. self.itemID)
@@ -577,6 +623,7 @@ local function CreateItemButtons()
 
     UpdateItemButtons()
 end
+
 -- =========================================================
 -- URLClickerBox
 -- =========================================================
@@ -670,7 +717,7 @@ local function CreateLogoutButton()
 
     local devText = devButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     devText:SetAllPoints()
-    devText:SetText("Developed by twitch.tv/goldbaronTV")
+    devText:SetText("Developed by twitch.tv/GoldbaronTV")
     devText:SetTextColor(0.6, 0.6, 0.6)
     devText:SetJustifyH("LEFT")
 
