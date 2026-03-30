@@ -10,11 +10,7 @@ local MT = CreateFrame("Frame", "MulchTrackerFrame")
 -- CONFIG
 -- =========================================================
 
-<<<<<<< HEAD
 local VERSION = "v1.1.0"
-=======
-local VERSION = "v1.1"
->>>>>>> 675e9f1f274dedd2f1e6c3a1a77ac1ef6615829c
 local ITEM_ID = 238388
 local READY_ICON = "|TInterface\\RaidFrame\\ReadyCheck-Ready:16|t"
 local SOON_THRESHOLD = 300 -- 5 Minuten
