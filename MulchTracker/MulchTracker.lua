@@ -10,7 +10,7 @@ local MT = CreateFrame("Frame", "MulchTrackerFrame")
 -- CONFIG
 -- =========================================================
 
-local VERSION = "v1.3.9"
+local VERSION = "v1.2.0"
 local ITEM_ID = 238388
 local READY_ICON = "|TInterface\\RaidFrame\\ReadyCheck-Ready:16|t"
 local SOON_THRESHOLD = 300 -- 5 Minuten
@@ -18,6 +18,8 @@ local SOON_THRESHOLD = 300 -- 5 Minuten
 local EXTRA_ITEMS = {
     { id = 238388, name = "Verzauberter Mulch" },
     { id = 237497, name = "Item 237497" },
+    { id = 238367, name = "Item 238367" },
+    { id = 242299, name = "Item 242299" },
 }
 
 local MULCH_BUFF_ID = 1223395
@@ -120,6 +122,7 @@ local function GetCharData(key)
             hasHerbalism = false,
             itemKnown = false,
             readyAt = 0,
+            windowVisible = true, -- saved per character
             lotus = {
                 dayKey = GetTodayKey(),
                 dayCount = 0,
@@ -131,6 +134,26 @@ local function GetCharData(key)
     end
 
     return MulchTrackerDB.characters[key]
+end
+
+local function IsWindowVisibleForCurrentChar()
+    local data = GetCharData(GetCharKey())
+    return data.windowVisible ~= false
+end
+
+local function SetWindowVisibleForCurrentChar(isVisible)
+    local data = GetCharData(GetCharKey())
+    data.windowVisible = isVisible and true or false
+end
+
+local function ApplySavedVisibilityForCurrentChar()
+    if IsWindowVisibleForCurrentChar() then
+        panel:Show()
+        RefreshUI()
+        UpdateItemButtons()
+    else
+        panel:Hide()
+    end
 end
 
 local function ResetLotusStatsIfNeeded(data)
@@ -315,11 +338,18 @@ local function UpdateCurrentCharacterData()
 end
 
 local function FormatReady(ts)
-    if IsReady(ts) then
+    local remaining = GetRemainingSeconds(ts)
+
+    if remaining <= 0 then
         return READY_ICON
     end
 
-    return date("%H:%M", ts)
+    if remaining <= 60 then
+        return string.format("%ds", remaining)
+    end
+
+    local minutes = math.ceil(remaining / 60)
+    return string.format("%dm", minutes)
 end
 
 local function GetRowStatus(data)
@@ -490,7 +520,7 @@ end
 
 panel = CreateFrame("Frame", "MulchTrackerPanel", UIParent, "BackdropTemplate")
 panel:SetSize(620, 300)
-panel:SetResizeBounds(420, 300)
+panel:SetResizeBounds(230, 200)
 panel:SetMovable(true)
 panel:EnableMouse(true)
 panel:SetResizable(true)
@@ -535,40 +565,44 @@ panel.versionText:SetTextColor(0.7, 0.7, 0.7)
 
 panel.close = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
 panel.close:SetPoint("TOPRIGHT", 0, 0)
+panel.close:SetScript("OnClick", function()
+    panel:Hide()
+    SetWindowVisibleForCurrentChar(false)
+end)
 
 panel.scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
 panel.scroll:SetPoint("TOPLEFT", 10, -35)
-panel.scroll:SetPoint("BOTTOMRIGHT", -30, 72)
+panel.scroll:SetPoint("BOTTOMRIGHT", -30, 95)
 panel.content = CreateFrame("Frame", nil, panel.scroll)
 panel.content:SetSize(550, 1)
 panel.scroll:SetScrollChild(panel.content)
 
-panel.headerName = panel.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+panel.headerName = panel.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 panel.headerName:SetJustifyH("LEFT")
 panel.headerName:SetText("Character")
 panel.headerName:SetTextColor(1, 0.82, 0)
 
-panel.headerLotusTop = panel.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+panel.headerLotusTop = panel.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 panel.headerLotusTop:SetJustifyH("CENTER")
 panel.headerLotusTop:SetText("Lotus")
 panel.headerLotusTop:SetTextColor(1, 0.82, 0)
 
-panel.headerLotusDaily = panel.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+panel.headerLotusDaily = panel.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 panel.headerLotusDaily:SetJustifyH("CENTER")
 panel.headerLotusDaily:SetText("Daily")
 panel.headerLotusDaily:SetTextColor(1, 0.82, 0)
 
-panel.headerAllTop = panel.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+panel.headerAllTop = panel.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 panel.headerAllTop:SetJustifyH("CENTER")
 panel.headerAllTop:SetText("All")
 panel.headerAllTop:SetTextColor(1, 0.82, 0)
 
-panel.headerLotusAllTime = panel.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+panel.headerLotusAllTime = panel.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 panel.headerLotusAllTime:SetJustifyH("CENTER")
 panel.headerLotusAllTime:SetText("Time")
 panel.headerLotusAllTime:SetTextColor(1, 0.82, 0)
 
-panel.headerTime = panel.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+panel.headerTime = panel.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 panel.headerTime:SetJustifyH("RIGHT")
 panel.headerTime:SetText("Ready")
 panel.headerTime:SetTextColor(1, 0.82, 0)
@@ -610,32 +644,54 @@ local function GetColumnLayout()
     local contentWidth = panel.content:GetWidth() or 550
     local leftPadding = 6
     local rightPadding = 12
+    local gap = 8
 
-    local available = math.max(300, contentWidth - leftPadding - rightPadding)
+    local available = math.max(180, contentWidth - leftPadding - rightPadding)
 
-    local gap = math.max(4, math.min(10, math.floor(available * 0.012)))
-
-    local baseTimeWidth = 62
-    local baseDailyWidth = 40
-    local baseAllTimeWidth = 40
     local minNameWidth = 135
+    local minTimeWidth = 62
+    local prefDailyWidth = 40
+    local prefAllTimeWidth = 40
 
-    local baseTotal = minNameWidth + baseDailyWidth + baseAllTimeWidth + baseTimeWidth + (gap * 2)
-    local extra = math.max(0, available - baseTotal)
+    local requiredMinimum = minNameWidth + minTimeWidth + gap
+    local extraForOptional = math.max(0, available - requiredMinimum)
 
-    local nameWidth = minNameWidth + math.floor(extra * 0.38)
-    local dailyWidth = baseDailyWidth + math.floor(extra * 0.22)
-    local allTimeWidth = baseAllTimeWidth + math.floor(extra * 0.24)
-    local timeWidth = baseTimeWidth + math.floor(extra * 0.16)
+    local dailyWidth = math.min(prefDailyWidth, math.floor(extraForOptional * 0.5))
+    local allTimeWidth = math.min(prefAllTimeWidth, extraForOptional - dailyWidth)
 
-    local used = nameWidth + dailyWidth + allTimeWidth + timeWidth + (gap * 2)
-    local remainder = available - used
-    nameWidth = nameWidth + math.max(0, remainder)
+    if allTimeWidth < 0 then
+        allTimeWidth = 0
+    end
+
+    local used = minNameWidth + minTimeWidth + dailyWidth + allTimeWidth
+    local gaps = gap
+
+    if dailyWidth > 0 then
+        gaps = gaps + gap
+    end
+    if allTimeWidth > 0 then
+        gaps = gaps + gap
+    end
+
+    local totalUsed = used + gaps
+    local remaining = available - totalUsed
+
+    local nameWidth = minNameWidth + math.max(0, remaining)
 
     local nameLeft = leftPadding
-    local dailyLeft = nameLeft + nameWidth + gap
-    local allTimeLeft = dailyLeft + dailyWidth + gap
-    local timeLeft = allTimeLeft + allTimeWidth + gap
+    local currentLeft = nameLeft + nameWidth + gap
+
+    local dailyLeft = currentLeft
+    if dailyWidth > 0 then
+        currentLeft = currentLeft + dailyWidth + gap
+    end
+
+    local allTimeLeft = currentLeft
+    if allTimeWidth > 0 then
+        currentLeft = currentLeft + allTimeWidth + gap
+    end
+
+    local timeLeft = available + leftPadding - minTimeWidth
 
     return {
         nameLeft = nameLeft,
@@ -645,7 +701,7 @@ local function GetColumnLayout()
         allTimeLeft = allTimeLeft,
         allTimeWidth = allTimeWidth,
         timeLeft = timeLeft,
-        timeWidth = timeWidth,
+        timeWidth = minTimeWidth,
     }
 end
 
@@ -658,26 +714,42 @@ local function UpdateHeaderLayout()
     panel.headerName:ClearAllPoints()
     panel.headerName:SetPoint("TOPLEFT", layout.nameLeft, bottomY)
     panel.headerName:SetWidth(layout.nameWidth)
+    panel.headerName:Show()
 
-    panel.headerLotusTop:ClearAllPoints()
-    panel.headerLotusTop:SetPoint("TOPLEFT", layout.dailyLeft, topY)
-    panel.headerLotusTop:SetWidth(layout.dailyWidth)
+    if layout.dailyWidth > 0 then
+        panel.headerLotusTop:ClearAllPoints()
+        panel.headerLotusTop:SetPoint("TOPLEFT", layout.dailyLeft, topY)
+        panel.headerLotusTop:SetWidth(layout.dailyWidth)
+        panel.headerLotusTop:Show()
 
-    panel.headerLotusDaily:ClearAllPoints()
-    panel.headerLotusDaily:SetPoint("TOPLEFT", layout.dailyLeft, bottomY)
-    panel.headerLotusDaily:SetWidth(layout.dailyWidth)
+        panel.headerLotusDaily:ClearAllPoints()
+        panel.headerLotusDaily:SetPoint("TOPLEFT", layout.dailyLeft, bottomY)
+        panel.headerLotusDaily:SetWidth(layout.dailyWidth)
+        panel.headerLotusDaily:Show()
+    else
+        panel.headerLotusTop:Hide()
+        panel.headerLotusDaily:Hide()
+    end
 
-    panel.headerAllTop:ClearAllPoints()
-    panel.headerAllTop:SetPoint("TOPLEFT", layout.allTimeLeft, topY)
-    panel.headerAllTop:SetWidth(layout.allTimeWidth)
+    if layout.allTimeWidth > 0 then
+        panel.headerAllTop:ClearAllPoints()
+        panel.headerAllTop:SetPoint("TOPLEFT", layout.allTimeLeft, topY)
+        panel.headerAllTop:SetWidth(layout.allTimeWidth)
+        panel.headerAllTop:Show()
 
-    panel.headerLotusAllTime:ClearAllPoints()
-    panel.headerLotusAllTime:SetPoint("TOPLEFT", layout.allTimeLeft, bottomY)
-    panel.headerLotusAllTime:SetWidth(layout.allTimeWidth)
+        panel.headerLotusAllTime:ClearAllPoints()
+        panel.headerLotusAllTime:SetPoint("TOPLEFT", layout.allTimeLeft, bottomY)
+        panel.headerLotusAllTime:SetWidth(layout.allTimeWidth)
+        panel.headerLotusAllTime:Show()
+    else
+        panel.headerAllTop:Hide()
+        panel.headerLotusAllTime:Hide()
+    end
 
     panel.headerTime:ClearAllPoints()
     panel.headerTime:SetPoint("TOPLEFT", layout.timeLeft, bottomY)
     panel.headerTime:SetWidth(layout.timeWidth)
+    panel.headerTime:Show()
 end
 
 local function UpdateRowLayout(row)
@@ -690,17 +762,28 @@ local function UpdateRowLayout(row)
     row.name:SetPoint("LEFT", layout.nameLeft, 0)
     row.name:SetWidth(layout.nameWidth)
 
-    row.lotusDaily:ClearAllPoints()
-    row.lotusDaily:SetPoint("LEFT", layout.dailyLeft, 0)
-    row.lotusDaily:SetWidth(layout.dailyWidth)
+    if layout.dailyWidth > 0 then
+        row.lotusDaily:ClearAllPoints()
+        row.lotusDaily:SetPoint("LEFT", layout.dailyLeft, 0)
+        row.lotusDaily:SetWidth(layout.dailyWidth)
+        row.lotusDaily:Show()
+    else
+        row.lotusDaily:Hide()
+    end
 
-    row.lotusAllTime:ClearAllPoints()
-    row.lotusAllTime:SetPoint("LEFT", layout.allTimeLeft, 0)
-    row.lotusAllTime:SetWidth(layout.allTimeWidth)
+    if layout.allTimeWidth > 0 then
+        row.lotusAllTime:ClearAllPoints()
+        row.lotusAllTime:SetPoint("LEFT", layout.allTimeLeft, 0)
+        row.lotusAllTime:SetWidth(layout.allTimeWidth)
+        row.lotusAllTime:Show()
+    else
+        row.lotusAllTime:Hide()
+    end
 
     row.time:ClearAllPoints()
     row.time:SetPoint("LEFT", layout.timeLeft, 0)
     row.time:SetWidth(layout.timeWidth)
+    row.time:Show()
 end
 
 local function ApplyWindowPosition()
@@ -796,7 +879,7 @@ local function ApplyRowVisualState(row, data, index)
     end
 end
 
-local function RefreshUI()
+function RefreshUI()
     EnsureDB()
     UpdateContentWidth()
     UpdateHeaderLayout()
@@ -847,7 +930,7 @@ local function RefreshUI()
         panel.rows[i]:Hide()
     end
 
-    panel.content:SetHeight(math.max(72, 40 + (#keys * 20)))
+    panel.content:SetHeight(math.max(76, 40 + (#keys * 20)))
 end
 
 -- =========================================================
@@ -929,7 +1012,7 @@ local function UpdateItemButton(button)
     end
 end
 
-local function UpdateItemButtons()
+function UpdateItemButtons()
     if not panel.itemButtons then
         return
     end
@@ -948,7 +1031,7 @@ local function CreateItemButton(parent, itemID, anchorTo, offsetX)
     if anchorTo then
         button:SetPoint("LEFT", anchorTo, "RIGHT", offsetX or 8, 0)
     else
-        button:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 12, 34)
+        button:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 12, 50)
     end
 
     button.bg = button:CreateTexture(nil, "BACKGROUND")
@@ -980,7 +1063,7 @@ local function CreateItemButton(parent, itemID, anchorTo, offsetX)
     button.cooldownText:SetPoint("CENTER", button, "CENTER", 0, 0)
     button.cooldownText:SetJustifyH("CENTER")
     button.cooldownText:SetTextColor(1, 1, 1)
-    button.cooldownText:SetFont("Fonts\\FRIZQT__.TTF", 20, "OUTLINE")
+    button.cooldownText:SetFont("Fonts\\FRIZQT__.TTF", 16, "OUTLINE")
     button.cooldownText:SetShadowOffset(1, -1)
     button.cooldownText:SetShadowColor(0, 0, 0, 1)
     button.cooldownText:SetText("")
@@ -1006,9 +1089,13 @@ local function CreateItemButtons()
 
     local button1 = CreateItemButton(panel, EXTRA_ITEMS[1].id, nil, nil)
     local button2 = CreateItemButton(panel, EXTRA_ITEMS[2].id, button1, 8)
+    local button3 = CreateItemButton(panel, EXTRA_ITEMS[3].id, button2, 8)
+    local button4 = CreateItemButton(panel, EXTRA_ITEMS[4].id, button3, 8)
 
     panel.itemButtons[1] = button1
     panel.itemButtons[2] = button2
+    panel.itemButtons[3] = button3
+    panel.itemButtons[4] = button4
     panel.itemButtonsCreated = true
 
     UpdateItemButtons()
@@ -1088,8 +1175,8 @@ end)
 
 local function CreateLogoutButton()
     local button = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    button:SetSize(80, 22)
-    button:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -12, 10)
+    button:SetSize(194, 22)
+    button:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, 24)
     button:SetText("Logout")
 
     local secure = CreateFrame("Button", nil, button, "SecureActionButtonTemplate")
@@ -1101,7 +1188,7 @@ local function CreateLogoutButton()
     panel.logoutButton = button
 
     local devButton = CreateFrame("Button", nil, panel)
-    devButton:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, 12)
+    devButton:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, 4)
     devButton:SetSize(220, 16)
 
     local devText = devButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -1153,8 +1240,10 @@ SlashCmdList["MULCHTRACKER"] = function(msg)
 
     if panel:IsShown() then
         panel:Hide()
+        SetWindowVisibleForCurrentChar(false)
     else
         panel:Show()
+        SetWindowVisibleForCurrentChar(true)
         RefreshUI()
         UpdateItemButtons()
     end
@@ -1189,7 +1278,7 @@ MT:SetScript("OnEvent", function(_, event, ...)
         ApplyWindowPosition()
         CreateLogoutButton()
         CreateItemButtons()
-        panel:Show()
+        panel:Hide()
         StartTicker()
         ChatPrint("geladen (" .. VERSION .. "). Befehle: /mulch, /mulchdebug")
 
@@ -1198,38 +1287,50 @@ MT:SetScript("OnEvent", function(_, event, ...)
             UpdateCurrentCharacterData()
             RefreshUI()
             UpdateItemButtons()
+            ApplySavedVisibilityForCurrentChar()
         end)
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         UpdateCurrentCharacterData()
         RefreshUI()
         UpdateItemButtons()
+        ApplySavedVisibilityForCurrentChar()
 
     elseif event == "UNIT_AURA" then
         local unit = ...
         if unit == "player" then
             UpdateMulchBuffState()
             DebugPrint("UNIT_AURA -> buff active =", tostring(GetCharData(GetCharKey()).mulchBuffActive))
-            RefreshUI()
+            if panel:IsShown() then
+                RefreshUI()
+            end
         end
 
     elseif event == "CHAT_MSG_LOOT" then
         local msg, playerName = ...
         HandleLootMessage(msg, playerName)
-        RefreshUI()
+        if panel:IsShown() then
+            RefreshUI()
+        end
 
     elseif event == "BAG_UPDATE_COOLDOWN" then
         UpdateCurrentCharacterData()
-        RefreshUI()
-        UpdateItemButtons()
+        if panel:IsShown() then
+            RefreshUI()
+            UpdateItemButtons()
+        end
 
     elseif event == "BAG_UPDATE_DELAYED" then
         UpdateCurrentCharacterData()
-        RefreshUI()
-        UpdateItemButtons()
+        if panel:IsShown() then
+            RefreshUI()
+            UpdateItemButtons()
+        end
 
     elseif event == "GET_ITEM_INFO_RECEIVED" then
-        UpdateItemButtons()
+        if panel:IsShown() then
+            UpdateItemButtons()
+        end
     end
 end)
 
