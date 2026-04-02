@@ -33,6 +33,10 @@ MulchTrackerDB = MulchTrackerDB or {}
 local ticker
 local panel
 
+-- forward declarations (important for click handlers)
+local RefreshUI
+local UpdateItemButtons
+
 -- =========================================================
 -- DEBUG
 -- =========================================================
@@ -70,6 +74,20 @@ local function EnsureDB()
         width = 620,
         height = 300,
     }
+
+    MulchTrackerDB.settings = MulchTrackerDB.settings or {
+        readyUsesClockTime = false,
+    }
+end
+
+local function IsReadyClockMode()
+    EnsureDB()
+    return MulchTrackerDB.settings.readyUsesClockTime == true
+end
+
+local function ToggleReadyDisplayMode()
+    EnsureDB()
+    MulchTrackerDB.settings.readyUsesClockTime = not MulchTrackerDB.settings.readyUsesClockTime
 end
 
 local function GetCharKey()
@@ -122,7 +140,7 @@ local function GetCharData(key)
             hasHerbalism = false,
             itemKnown = false,
             readyAt = 0,
-            windowVisible = true, -- saved per character
+            windowVisible = true,
             lotus = {
                 dayKey = GetTodayKey(),
                 dayCount = 0,
@@ -344,6 +362,10 @@ local function FormatReady(ts)
         return READY_ICON
     end
 
+    if IsReadyClockMode() then
+        return date("%H:%M", ts)
+    end
+
     if remaining <= 60 then
         return string.format("%ds", remaining)
     end
@@ -520,7 +542,7 @@ end
 
 panel = CreateFrame("Frame", "MulchTrackerPanel", UIParent, "BackdropTemplate")
 panel:SetSize(620, 300)
-panel:SetResizeBounds(230, 200)
+panel:SetResizeBounds(230, 190, 400, 500)
 panel:SetMovable(true)
 panel:EnableMouse(true)
 panel:SetResizable(true)
@@ -589,7 +611,7 @@ panel.headerLotusTop:SetTextColor(1, 0.82, 0)
 
 panel.headerLotusDaily = panel.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 panel.headerLotusDaily:SetJustifyH("CENTER")
-panel.headerLotusDaily:SetText("Daily")
+panel.headerLotusDaily:SetText("Today")
 panel.headerLotusDaily:SetTextColor(1, 0.82, 0)
 
 panel.headerAllTop = panel.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -602,10 +624,37 @@ panel.headerLotusAllTime:SetJustifyH("CENTER")
 panel.headerLotusAllTime:SetText("Time")
 panel.headerLotusAllTime:SetTextColor(1, 0.82, 0)
 
-panel.headerTime = panel.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+panel.headerTimeButton = CreateFrame("Button", nil, panel.content)
+panel.headerTimeButton:SetHeight(20)
+panel.headerTimeButton:EnableMouse(true)
+panel.headerTimeButton:RegisterForClicks("LeftButtonUp")
+panel.headerTimeButton:SetHitRectInsets(0, 0, 0, 0)
+panel.headerTimeButton:SetFrameStrata(panel.content:GetFrameStrata())
+panel.headerTimeButton:SetFrameLevel(panel.content:GetFrameLevel() + 10)
+
+panel.headerTime = panel.headerTimeButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+panel.headerTime:SetAllPoints(panel.headerTimeButton)
 panel.headerTime:SetJustifyH("RIGHT")
 panel.headerTime:SetText("Ready")
 panel.headerTime:SetTextColor(1, 0.82, 0)
+
+panel.headerTimeButton:SetScript("OnClick", function()
+    ToggleReadyDisplayMode()
+    RefreshUI()
+end)
+
+panel.headerTimeButton:SetScript("OnEnter", function()
+    panel.headerTime:SetTextColor(1, 1, 1)
+    GameTooltip:SetOwner(panel.headerTimeButton, "ANCHOR_TOP")
+    GameTooltip:SetText("Click to toggle Ready display")
+    GameTooltip:AddLine("Remaining time  <->  clock time", 0.8, 0.8, 0.8)
+    GameTooltip:Show()
+end)
+
+panel.headerTimeButton:SetScript("OnLeave", function()
+    panel.headerTime:SetTextColor(1, 0.82, 0)
+    GameTooltip:Hide()
+end)
 
 panel.rows = {}
 panel.itemButtons = {}
@@ -649,49 +698,50 @@ local function GetColumnLayout()
     local available = math.max(180, contentWidth - leftPadding - rightPadding)
 
     local minNameWidth = 135
-    local minTimeWidth = 62
-    local prefDailyWidth = 40
-    local prefAllTimeWidth = 40
+    local minTimeWidth = 40
+    local dailyWidth = 40
+    local allTimeWidth = 40
 
-    local requiredMinimum = minNameWidth + minTimeWidth + gap
-    local extraForOptional = math.max(0, available - requiredMinimum)
-
-    local dailyWidth = math.min(prefDailyWidth, math.floor(extraForOptional * 0.5))
-    local allTimeWidth = math.min(prefAllTimeWidth, extraForOptional - dailyWidth)
-
-    if allTimeWidth < 0 then
-        allTimeWidth = 0
-    end
-
-    local used = minNameWidth + minTimeWidth + dailyWidth + allTimeWidth
-    local gaps = gap
-
-    if dailyWidth > 0 then
-        gaps = gaps + gap
-    end
-    if allTimeWidth > 0 then
-        gaps = gaps + gap
-    end
-
-    local totalUsed = used + gaps
-    local remaining = available - totalUsed
-
-    local nameWidth = minNameWidth + math.max(0, remaining)
+    local showDailyBelow = 220
+    local showAllTimeBelow = 260
 
     local nameLeft = leftPadding
-    local currentLeft = nameLeft + nameWidth + gap
-
-    local dailyLeft = currentLeft
-    if dailyWidth > 0 then
-        currentLeft = currentLeft + dailyWidth + gap
-    end
-
-    local allTimeLeft = currentLeft
-    if allTimeWidth > 0 then
-        currentLeft = currentLeft + allTimeWidth + gap
-    end
-
     local timeLeft = available + leftPadding - minTimeWidth
+
+    if available < showDailyBelow then
+        local nameWidth = math.max(80, timeLeft - nameLeft - gap)
+
+        return {
+            nameLeft = nameLeft,
+            nameWidth = nameWidth,
+            dailyLeft = 0,
+            dailyWidth = 0,
+            allTimeLeft = 0,
+            allTimeWidth = 0,
+            timeLeft = timeLeft,
+            timeWidth = minTimeWidth,
+        }
+    end
+
+    if available < showAllTimeBelow then
+        local dailyLeft = timeLeft - gap - dailyWidth
+        local nameWidth = math.max(80, dailyLeft - gap - nameLeft)
+
+        return {
+            nameLeft = nameLeft,
+            nameWidth = nameWidth,
+            dailyLeft = dailyLeft,
+            dailyWidth = dailyWidth,
+            allTimeLeft = 0,
+            allTimeWidth = 0,
+            timeLeft = timeLeft,
+            timeWidth = minTimeWidth,
+        }
+    end
+
+    local allTimeLeft = timeLeft - gap - allTimeWidth
+    local dailyLeft = allTimeLeft - gap - dailyWidth
+    local nameWidth = math.max(80, dailyLeft - gap - nameLeft)
 
     return {
         nameLeft = nameLeft,
@@ -712,18 +762,18 @@ local function UpdateHeaderLayout()
     local bottomY = -20
 
     panel.headerName:ClearAllPoints()
-    panel.headerName:SetPoint("TOPLEFT", layout.nameLeft, bottomY)
+    panel.headerName:SetPoint("TOPLEFT", panel.content, "TOPLEFT", layout.nameLeft, bottomY)
     panel.headerName:SetWidth(layout.nameWidth)
     panel.headerName:Show()
 
     if layout.dailyWidth > 0 then
         panel.headerLotusTop:ClearAllPoints()
-        panel.headerLotusTop:SetPoint("TOPLEFT", layout.dailyLeft, topY)
+        panel.headerLotusTop:SetPoint("TOPLEFT", panel.content, "TOPLEFT", layout.dailyLeft, topY)
         panel.headerLotusTop:SetWidth(layout.dailyWidth)
         panel.headerLotusTop:Show()
 
         panel.headerLotusDaily:ClearAllPoints()
-        panel.headerLotusDaily:SetPoint("TOPLEFT", layout.dailyLeft, bottomY)
+        panel.headerLotusDaily:SetPoint("TOPLEFT", panel.content, "TOPLEFT", layout.dailyLeft, bottomY)
         panel.headerLotusDaily:SetWidth(layout.dailyWidth)
         panel.headerLotusDaily:Show()
     else
@@ -733,12 +783,12 @@ local function UpdateHeaderLayout()
 
     if layout.allTimeWidth > 0 then
         panel.headerAllTop:ClearAllPoints()
-        panel.headerAllTop:SetPoint("TOPLEFT", layout.allTimeLeft, topY)
+        panel.headerAllTop:SetPoint("TOPLEFT", panel.content, "TOPLEFT", layout.allTimeLeft, topY)
         panel.headerAllTop:SetWidth(layout.allTimeWidth)
         panel.headerAllTop:Show()
 
         panel.headerLotusAllTime:ClearAllPoints()
-        panel.headerLotusAllTime:SetPoint("TOPLEFT", layout.allTimeLeft, bottomY)
+        panel.headerLotusAllTime:SetPoint("TOPLEFT", panel.content, "TOPLEFT", layout.allTimeLeft, bottomY)
         panel.headerLotusAllTime:SetWidth(layout.allTimeWidth)
         panel.headerLotusAllTime:Show()
     else
@@ -746,9 +796,15 @@ local function UpdateHeaderLayout()
         panel.headerLotusAllTime:Hide()
     end
 
+    panel.headerTimeButton:ClearAllPoints()
+    panel.headerTimeButton:SetPoint("TOPLEFT", panel.content, "TOPLEFT", layout.timeLeft, bottomY)
+    panel.headerTimeButton:SetSize(layout.timeWidth, 20)
+    panel.headerTimeButton:Show()
+
     panel.headerTime:ClearAllPoints()
-    panel.headerTime:SetPoint("TOPLEFT", layout.timeLeft, bottomY)
-    panel.headerTime:SetWidth(layout.timeWidth)
+    panel.headerTime:SetAllPoints(panel.headerTimeButton)
+    panel.headerTime:SetJustifyH("RIGHT")
+    panel.headerTime:SetText(IsReadyClockMode() and "Clock" or "Ready")
     panel.headerTime:Show()
 end
 
@@ -819,6 +875,9 @@ local function GetRow(i)
 
         row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         row.name:SetJustifyH("LEFT")
+        row.name:SetMaxLines(1)
+        row.name:SetWordWrap(false)
+        row.name:SetNonSpaceWrap(false)
 
         row.lotusDaily = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         row.lotusDaily:SetJustifyH("CENTER")
@@ -879,7 +938,7 @@ local function ApplyRowVisualState(row, data, index)
     end
 end
 
-function RefreshUI()
+RefreshUI = function()
     EnsureDB()
     UpdateContentWidth()
     UpdateHeaderLayout()
@@ -1012,7 +1071,7 @@ local function UpdateItemButton(button)
     end
 end
 
-function UpdateItemButtons()
+UpdateItemButtons = function()
     if not panel.itemButtons then
         return
     end
