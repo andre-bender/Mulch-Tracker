@@ -10,7 +10,7 @@ local MT = CreateFrame("Frame", "MulchTrackerFrame")
 -- CONFIG
 -- =========================================================
 
-local VERSION = "v1.2.0"
+local VERSION = "v1.3.0"
 local ITEM_ID = 238388
 local READY_ICON = "|TInterface\\RaidFrame\\ReadyCheck-Ready:16|t"
 local SOON_THRESHOLD = 300 -- 5 Minuten
@@ -578,7 +578,8 @@ end)
 
 panel.title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 panel.title:SetPoint("TOPLEFT", 12, -10)
-panel.title:SetText("Mulch Tracker")
+--panel.title:SetText("|cff33ff33Mulch|r Tracker")
+panel.title:SetText("|cff3f8f3fMulch|r Tracker")
 
 panel.versionText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 panel.versionText:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -30, -14)
@@ -796,16 +797,17 @@ local function UpdateHeaderLayout()
         panel.headerLotusAllTime:Hide()
     end
 
-    panel.headerTimeButton:ClearAllPoints()
-    panel.headerTimeButton:SetPoint("TOPLEFT", panel.content, "TOPLEFT", layout.timeLeft, bottomY)
-    panel.headerTimeButton:SetSize(layout.timeWidth, 20)
-    panel.headerTimeButton:Show()
+panel.headerTimeButton:ClearAllPoints()
+panel.headerTimeButton:SetPoint("TOPLEFT", panel.content, "TOPLEFT", layout.timeLeft, bottomY + 3)
+panel.headerTimeButton:SetSize(layout.timeWidth, 20)
+panel.headerTimeButton:Show()
 
-    panel.headerTime:ClearAllPoints()
-    panel.headerTime:SetAllPoints(panel.headerTimeButton)
-    panel.headerTime:SetJustifyH("RIGHT")
-    panel.headerTime:SetText(IsReadyClockMode() and "Clock" or "Ready")
-    panel.headerTime:Show()
+panel.headerTime:ClearAllPoints()
+panel.headerTime:SetPoint("TOPLEFT", panel.headerTimeButton, "TOPLEFT", 0, 2)
+panel.headerTime:SetPoint("BOTTOMRIGHT", panel.headerTimeButton, "BOTTOMRIGHT", 0, 2)
+panel.headerTime:SetJustifyH("RIGHT")
+panel.headerTime:SetText(IsReadyClockMode() and "Clock" or "Ready")
+panel.headerTime:Show()
 end
 
 local function UpdateRowLayout(row)
@@ -1016,8 +1018,6 @@ local function UpdateItemButton(button)
     end
 
     button.icon:SetTexture(icon)
-    button:SetAttribute("type", "item")
-    button:SetAttribute("item", "item:" .. itemID)
 
     if count and count > 0 then
         button.count:SetText(count)
@@ -1086,6 +1086,8 @@ local function CreateItemButton(parent, itemID, anchorTo, offsetX)
     button:SetSize(42, 42)
     button.itemID = itemID
     button:RegisterForClicks("AnyUp", "AnyDown")
+    button:SetAttribute("type", "item")
+    button:SetAttribute("item", "item:" .. itemID)
 
     if anchorTo then
         button:SetPoint("LEFT", anchorTo, "RIGHT", offsetX or 8, 0)
