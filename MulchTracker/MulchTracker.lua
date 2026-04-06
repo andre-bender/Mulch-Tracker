@@ -14,6 +14,8 @@ local VERSION = "v1.3.0"
 local ITEM_ID = 238388
 local READY_ICON = "|TInterface\\RaidFrame\\ReadyCheck-Ready:16|t"
 local SOON_THRESHOLD = 300 -- 5 Minuten
+local MINIMIZED_WIDTH = 230
+local MINIMIZED_HEIGHT = 80
 
 local EXTRA_ITEMS = {
     { id = 238388, name = "Verzauberter Mulch" },
@@ -36,6 +38,9 @@ local panel
 -- forward declarations (important for click handlers)
 local RefreshUI
 local UpdateItemButtons
+local ApplyPanelState
+local TogglePanelMinimized
+local UpdateMinimizedTitleVisibility
 
 -- =========================================================
 -- DEBUG
@@ -73,7 +78,14 @@ local function EnsureDB()
         y = 0,
         width = 620,
         height = 300,
+        minimized = false,
+        restoreWidth = 620,
+        restoreHeight = 300,
     }
+
+    MulchTrackerDB.window.minimized = MulchTrackerDB.window.minimized == true
+    MulchTrackerDB.window.restoreWidth = MulchTrackerDB.window.restoreWidth or MulchTrackerDB.window.width or 620
+    MulchTrackerDB.window.restoreHeight = MulchTrackerDB.window.restoreHeight or MulchTrackerDB.window.height or 300
 
     MulchTrackerDB.settings = MulchTrackerDB.settings or {
         readyUsesClockTime = false,
@@ -88,6 +100,37 @@ end
 local function ToggleReadyDisplayMode()
     EnsureDB()
     MulchTrackerDB.settings.readyUsesClockTime = not MulchTrackerDB.settings.readyUsesClockTime
+end
+
+local function IsWindowMinimized()
+    EnsureDB()
+    return MulchTrackerDB.window.minimized == true
+end
+
+local function SavePanelAnchor(frame)
+    EnsureDB()
+
+    local point, _, relativePoint, x, y = frame:GetPoint()
+    MulchTrackerDB.window.point = point
+    MulchTrackerDB.window.relativePoint = relativePoint
+    MulchTrackerDB.window.x = x
+    MulchTrackerDB.window.y = y
+end
+
+local function SaveExpandedPanelSize(frame)
+    EnsureDB()
+
+    local width = frame:GetWidth()
+    local height = frame:GetHeight()
+    MulchTrackerDB.window.width = width
+    MulchTrackerDB.window.height = height
+    MulchTrackerDB.window.restoreWidth = width
+    MulchTrackerDB.window.restoreHeight = height
+end
+
+local function SetWindowMinimized(minimized)
+    EnsureDB()
+    MulchTrackerDB.window.minimized = minimized == true
 end
 
 local function GetCharKey()
@@ -566,25 +609,26 @@ end)
 panel:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
 
-    EnsureDB()
-    local point, _, relativePoint, x, y = self:GetPoint()
-    MulchTrackerDB.window.point = point
-    MulchTrackerDB.window.relativePoint = relativePoint
-    MulchTrackerDB.window.x = x
-    MulchTrackerDB.window.y = y
-    MulchTrackerDB.window.width = self:GetWidth()
-    MulchTrackerDB.window.height = self:GetHeight()
+    SavePanelAnchor(self)
+
+    if not IsWindowMinimized() then
+        SaveExpandedPanelSize(self)
+    end
+end)
+
+panel:SetScript("OnSizeChanged", function(self)
+    if not self:IsShown() or IsWindowMinimized() then
+        return
+    end
+
+    RefreshUI()
+    UpdateItemButtons()
 end)
 
 panel.title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 panel.title:SetPoint("TOPLEFT", 12, -10)
 --panel.title:SetText("|cff33ff33Mulch|r Tracker")
 panel.title:SetText("|cff3f8f3fMulch|r Tracker")
-
-panel.versionText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-panel.versionText:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -30, -14)
-panel.versionText:SetText(VERSION)
-panel.versionText:SetTextColor(0.7, 0.7, 0.7)
 
 panel.close = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
 panel.close:SetPoint("TOPRIGHT", 0, 0)
@@ -593,12 +637,27 @@ panel.close:SetScript("OnClick", function()
     SetWindowVisibleForCurrentChar(false)
 end)
 
-panel.scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+panel.versionText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+panel.versionText:SetPoint("LEFT", panel.title, "RIGHT", 8, -1)
+panel.versionText:SetText(VERSION)
+panel.versionText:SetTextColor(0.7, 0.7, 0.7)
+
+panel.minimizeButton = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
+panel.minimizeButton:SetSize(panel.close:GetWidth() + 6, panel.close:GetHeight() + 6)
+panel.minimizeButton:SetPoint("RIGHT", panel.close, "LEFT", 2, 0)
+panel.minimizeButton:SetHitRectInsets(0, 0, 0, 0)
+
+panel.scroll = CreateFrame("ScrollFrame", "MulchTrackerPanelScrollFrame", panel, "UIPanelScrollFrameTemplate")
 panel.scroll:SetPoint("TOPLEFT", 10, -35)
 panel.scroll:SetPoint("BOTTOMRIGHT", -30, 95)
 panel.content = CreateFrame("Frame", nil, panel.scroll)
 panel.content:SetSize(550, 1)
 panel.scroll:SetScrollChild(panel.content)
+panel.scroll:HookScript("OnVerticalScroll", function()
+    if UpdateMinimizedTitleVisibility then
+        UpdateMinimizedTitleVisibility()
+    end
+end)
 
 panel.headerName = panel.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 panel.headerName:SetJustifyH("LEFT")
@@ -657,6 +716,10 @@ panel.headerTimeButton:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
+panel.minimizeButton:SetScript("OnClick", function()
+    TogglePanelMinimized()
+end)
+
 panel.rows = {}
 panel.itemButtons = {}
 
@@ -672,14 +735,8 @@ end)
 panel.ResizeGrip:SetScript("OnMouseUp", function(self)
     self:GetParent():StopMovingOrSizing()
 
-    EnsureDB()
-    local point, _, relativePoint, x, y = self:GetParent():GetPoint()
-    MulchTrackerDB.window.point = point
-    MulchTrackerDB.window.relativePoint = relativePoint
-    MulchTrackerDB.window.x = x
-    MulchTrackerDB.window.y = y
-    MulchTrackerDB.window.width = self:GetParent():GetWidth()
-    MulchTrackerDB.window.height = self:GetParent():GetHeight()
+    SavePanelAnchor(self:GetParent())
+    SaveExpandedPanelSize(self:GetParent())
 end)
 
 local function UpdateContentWidth()
@@ -688,6 +745,112 @@ local function UpdateContentWidth()
         width = 550
     end
     panel.content:SetWidth(width)
+end
+
+local function GetScrollBarParts()
+    local scrollName = panel.scroll and panel.scroll:GetName()
+    local scrollBar = panel.scroll and panel.scroll.ScrollBar
+
+    if not scrollBar and scrollName then
+        scrollBar = _G[scrollName .. "ScrollBar"]
+    end
+
+    local scrollUpButton = scrollBar and scrollBar.ScrollUpButton
+    local scrollDownButton = scrollBar and scrollBar.ScrollDownButton
+
+    if not scrollUpButton and scrollName then
+        scrollUpButton = _G[scrollName .. "ScrollBarScrollUpButton"]
+    end
+
+    if not scrollDownButton and scrollName then
+        scrollDownButton = _G[scrollName .. "ScrollBarScrollDownButton"]
+    end
+
+    return scrollBar, scrollUpButton, scrollDownButton
+end
+
+local function SetScrollBarVisible(isVisible)
+    local scrollBar, scrollUpButton, scrollDownButton = GetScrollBarParts()
+    if not scrollBar then
+        return
+    end
+
+    if isVisible then
+        scrollBar:Show()
+        scrollBar:SetAlpha(1)
+        scrollBar:EnableMouse(true)
+
+        if scrollUpButton then
+            scrollUpButton:Show()
+        end
+        if scrollDownButton then
+            scrollDownButton:Show()
+        end
+    else
+        scrollBar:Hide()
+        scrollBar:SetAlpha(0)
+        scrollBar:EnableMouse(false)
+
+        if scrollUpButton then
+            scrollUpButton:Hide()
+        end
+        if scrollDownButton then
+            scrollDownButton:Hide()
+        end
+    end
+end
+
+local function SetMinimizeButtonTextures(isMinimized)
+    local normalTexture
+    local pushedTexture
+    local highlightTexture
+
+    if isMinimized then
+        normalTexture = "Interface\\Buttons\\UI-Panel-ExpandButton-Up"
+        pushedTexture = "Interface\\Buttons\\UI-Panel-ExpandButton-Down"
+        highlightTexture = "Interface\\Buttons\\UI-Panel-ExpandButton-Highlight"
+    else
+        normalTexture = "Interface\\Buttons\\UI-Panel-HideButton-Up"
+        pushedTexture = "Interface\\Buttons\\UI-Panel-HideButton-Down"
+        highlightTexture = "Interface\\Buttons\\UI-Panel-HideButton-Highlight"
+    end
+
+    panel.minimizeButton:SetNormalTexture(normalTexture)
+    panel.minimizeButton:SetPushedTexture(pushedTexture)
+    panel.minimizeButton:SetHighlightTexture(highlightTexture, "ADD")
+
+    local normal = panel.minimizeButton:GetNormalTexture()
+    if normal then
+        normal:SetTexCoord(0, 1, 0, 1)
+    end
+
+    local pushed = panel.minimizeButton:GetPushedTexture()
+    if pushed then
+        pushed:SetTexCoord(0, 1, 0, 1)
+    end
+
+    local highlight = panel.minimizeButton:GetHighlightTexture()
+    if highlight then
+        highlight:SetTexCoord(0, 1, 0, 1)
+    end
+end
+
+UpdateMinimizedTitleVisibility = function()
+    if not panel or not panel.title then
+        return
+    end
+
+    if not IsWindowMinimized() then
+        panel.title:Show()
+        return
+    end
+
+    local scrollOffset = panel.scroll and panel.scroll:GetVerticalScroll() or 0
+    if scrollOffset and scrollOffset > 0 then
+        panel.title:Hide()
+    else
+        panel.title:Show()
+    end
 end
 
 local function GetColumnLayout()
@@ -855,15 +1018,114 @@ local function ApplyWindowPosition()
         MulchTrackerDB.window.x or 0,
         MulchTrackerDB.window.y or 0
     )
-    panel:SetSize(
-        MulchTrackerDB.window.width or 620,
-        MulchTrackerDB.window.height or 300
-    )
+
+    if IsWindowMinimized() then
+        panel:SetSize(MINIMIZED_WIDTH, MINIMIZED_HEIGHT)
+    else
+        panel:SetSize(
+            MulchTrackerDB.window.restoreWidth or MulchTrackerDB.window.width or 620,
+            MulchTrackerDB.window.restoreHeight or MulchTrackerDB.window.height or 300
+        )
+    end
 
     C_Timer.After(0, function()
         UpdateContentWidth()
         UpdateHeaderLayout()
     end)
+end
+
+ApplyPanelState = function()
+    local isMinimized = IsWindowMinimized()
+
+    panel:SetResizable(not isMinimized)
+
+    SetMinimizeButtonTextures(isMinimized)
+
+    if isMinimized then
+        panel.title:SetFontObject("GameFontNormal")
+        panel.title:ClearAllPoints()
+        panel.title:SetPoint("TOPLEFT", 12, -6)
+        panel.versionText:Hide()
+        SetScrollBarVisible(false)
+
+        panel.scroll:Show()
+        panel.scroll:ClearAllPoints()
+        panel.scroll:SetPoint("TOPLEFT", 10, -10)
+        panel.scroll:SetPoint("BOTTOMRIGHT", -30, 10)
+
+        panel.headerTimeButton:Show()
+        panel.ResizeGrip:Hide()
+
+        if panel.logoutButton then
+            panel.logoutButton:Hide()
+        end
+
+        if panel.devButton then
+            panel.devButton:Hide()
+        end
+
+        for _, button in ipairs(panel.itemButtons or {}) do
+            button:Hide()
+        end
+
+        UpdateMinimizedTitleVisibility()
+    else
+        panel.title:SetFontObject("GameFontNormalLarge")
+        panel.title:ClearAllPoints()
+        panel.title:SetPoint("TOPLEFT", 12, -10)
+        panel.title:Show()
+        panel.versionText:ClearAllPoints()
+        panel.versionText:SetPoint("LEFT", panel.title, "RIGHT", 8, -1)
+        panel.versionText:Show()
+        SetScrollBarVisible(true)
+
+        panel.scroll:Show()
+        panel.scroll:ClearAllPoints()
+        panel.scroll:SetPoint("TOPLEFT", 10, -35)
+        panel.scroll:SetPoint("BOTTOMRIGHT", -30, 95)
+
+        panel.headerTimeButton:Show()
+        panel.ResizeGrip:Show()
+
+        if panel.logoutButton then
+            panel.logoutButton:Show()
+        end
+
+        if panel.devButton then
+            panel.devButton:Show()
+        end
+
+        for _, button in ipairs(panel.itemButtons or {}) do
+            button:Show()
+        end
+
+        UpdateItemButtons()
+    end
+
+    UpdateContentWidth()
+    UpdateHeaderLayout()
+    UpdateMinimizedTitleVisibility()
+end
+
+TogglePanelMinimized = function()
+    EnsureDB()
+
+    if IsWindowMinimized() then
+        SetWindowMinimized(false)
+        MulchTrackerDB.window.width = MulchTrackerDB.window.restoreWidth or 620
+        MulchTrackerDB.window.height = MulchTrackerDB.window.restoreHeight or 300
+    else
+        SavePanelAnchor(panel)
+        SaveExpandedPanelSize(panel)
+        SetWindowMinimized(true)
+    end
+
+    ApplyWindowPosition()
+    ApplyPanelState()
+
+    if not IsWindowMinimized() then
+        RefreshUI()
+    end
 end
 
 local function GetRow(i)
@@ -942,6 +1204,7 @@ end
 
 RefreshUI = function()
     EnsureDB()
+
     UpdateContentWidth()
     UpdateHeaderLayout()
 
@@ -969,6 +1232,7 @@ RefreshUI = function()
         end
 
         panel.content:SetHeight(72)
+        UpdateMinimizedTitleVisibility()
         return
     end
 
@@ -992,6 +1256,7 @@ RefreshUI = function()
     end
 
     panel.content:SetHeight(math.max(76, 40 + (#keys * 20)))
+    UpdateMinimizedTitleVisibility()
 end
 
 -- =========================================================
@@ -1160,6 +1425,7 @@ local function CreateItemButtons()
     panel.itemButtonsCreated = true
 
     UpdateItemButtons()
+    ApplyPanelState()
 end
 
 -- =========================================================
@@ -1339,6 +1605,7 @@ MT:SetScript("OnEvent", function(_, event, ...)
         ApplyWindowPosition()
         CreateLogoutButton()
         CreateItemButtons()
+        ApplyPanelState()
         panel:Hide()
         StartTicker()
         ChatPrint("geladen (" .. VERSION .. "). Befehle: /mulch, /mulchdebug")
