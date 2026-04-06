@@ -10,7 +10,11 @@ local MT = CreateFrame("Frame", "MulchTrackerFrame")
 -- CONFIG
 -- =========================================================
 
-local VERSION = "v1.3.0"
+local VERSION = (
+    (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version"))
+    or (GetAddOnMetadata and GetAddOnMetadata(ADDON_NAME, "Version"))
+    or "0.0.0"
+)
 local ITEM_ID = 238388
 local READY_ICON = "|TInterface\\RaidFrame\\ReadyCheck-Ready:16|t"
 local SOON_THRESHOLD = 300 -- 5 Minuten

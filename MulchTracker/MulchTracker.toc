@@ -2,7 +2,7 @@
 ## Title: Mulch Tracker
 ## Notes: Tracks Mulch Cooldown for herbalism profession
 ## Author: GoldbaronTV
-## Version: 1.3.0
+## Version: 1.3.3
 ## SavedVariables: MulchTrackerDB
 
 MulchTracker.lua
